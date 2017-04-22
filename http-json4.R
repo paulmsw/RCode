@@ -10,13 +10,14 @@ library(RMySQL)
 library(RColorBrewer)
 library(parallel)
 library(doSNOW)
-library(doMC)
+library(tidyr)
+options(scipen=999)
 
 library(data.table)
 
 ctrmodel <- read.csv("~/Data/sales/ctrmodel.csv")
 ctrmod <- select(ctrmodel, 2,3)
-
+rm(ctrmodel)
 options(stringsAsFactors=T)
 
 setwd("~/Data/RandD/RCode")
@@ -28,7 +29,7 @@ endDate <- now - 1
 lag <- 90
 startDate <- endDate - lag
 limit <- "99999999"
-clientID <- 63
+clientID <- 1
 
 # Define DB Connection
 library(RMySQL)
@@ -94,27 +95,22 @@ lenDF <- nrow(keywords)
 
 
 
-flattenlist <- function(x){
-  morelists <- sapply(x, function(xprime) class(xprime)[1]=="list")
-  out <- c(x[!morelists], unlist(x[morelists], recursive=FALSE))
-  if(sum(morelists)){
-    Recall(out)
-  }else{
-    return(out)
-  }
-}
-
-
-
-
 pb <- txtProgressBar(min = 1, max = lenDF, style = 3)
 
 
 
-#library(doSNOW)
-#NumberOfCluster <- 30
-#cl <- makeCluster(NumberOfCluster, outfile = "")
-#registerDoParallel(cl)
+library(doSNOW)
+NumberOfCluster <- 30
+cl <- makeCluster(NumberOfCluster, outfile = "")
+registerDoParallel(cl)
+
+#library(doMPI)
+#cl <- startMPIcluster( maxcores=30 )
+#registerDoMPI(cl)
+
+#cs <- ceiling(lenDF / getDoParWorkers())
+#opt <- list(chunkSize=cs)
+
 
 x <- NULL
 tmp <- NULL
@@ -132,65 +128,73 @@ newpath <- paste(root, dirname, sep = "" )
 
 if (!dir.exists(dirname)) {
   dir.create(newpath, showWarnings = TRUE, recursive = FALSE, mode = "0777")
-
+  print(paste("creating dir:", newpath, sep = " " ))
 } 
 
 setwd(newpath)
+print(paste("switched to:", newpath, sep = " " ))
 
+i = 10
 
-foreach(i = 1:lenDF-1) %do% {
-  starttime <- Sys.time() 
-    a <- i / 100 ; b <- (i-1) / 100;  c <- floor(b) ; d <- floor(a)
-    trigger <- d - c #1 or 0 
-    print(i)
-    print(paste("trigger:", trigger, sep = " " ))
+foreach(i = 1:(lenDF-1), .packages = "tidyr") %dopar% {
+  startTime <- Sys.time() 
+  a <- i / 100 ; b <- (i-1) / 100;  c <- floor(b) ; d <- floor(a)
+  trigger <- d - c #1 or 0 
+  print(i)
+  
+  j <- keywords[i,]
+  print(colnames(j))
+  print(lenDF - i)
+  setTxtProgressBar(pb, i) 
+  r <- rbind(queryRankings(j[,2], j[,4] , startDate, endDate, limit))
+  
+  if(trigger == 1) {
+  
+    # Make Filename Usable
+    kw_no_space <-str_replace_all(j[,4],"[^a-zA-Z0-9]", "_") 
+    filename <- paste(clientID, kw_no_space,startDate, ".csv", sep = "_")
    
-     if((trigger == 1) | (i == lenDF-1)){  
-      
-      j <- keywords[i,]
-      print(colnames(j))
-      print(lenDF - i)
-      setTxtProgressBar(pb, i) 
-      r <- rbind(queryRankings(j[,2], j[,4] , startDate, endDate, limit))
-      
     
-      
-      print(colnames(output))
-      print(colnames(r))
+    r2 <- r  %>% dplyr::select(2,3,4,5)
+    names(r2) <- c("Key","Position", "Url", "Domain")
     
-      print(clientID)
-      
-      print(file)
-      } else if (trigger == 0) { 
-      print(colnames(output))
-      kw_no_space <-str_replace_all(j[,4],"[^a-zA-Z0-9]", "_") 
+    
+    r3 <- as.data.table(inner_join(r2, ctrmod, by = "Position" ))
+    r4 <- r3[,Keyword:=lapply(Key, function(x) x[2])]
+    r5 <- r4[,Year:=lapply(Key, function(x) x[3])]
+    r6 <- r5[,Month:=lapply(Key, function(x) x[4])]
+    r7 <- r6[,Day:=lapply(Key, function(x) x[5])]
+    r8 <- r7[,Country:=lapply(Key, function(x) x[1])]
+    
+    
+    r8$Date <- as.Date(paste(r8$Year, r8$Month, r8$Day, sep = "-"), format = "%Y-%m-%d")
+    r8$Key  <- NULL
+    r8$Year <- NULL
+    r8$Month <- NULL
+    r8$Day <- NULL
+    
+    r8$Keyword<- as.factor(unlist(r8$Keyword))
+    r8$Country<- as.factor(unlist(r8$Country))
+    
+    
+    print(paste("writing file:", filename, sep = "")) 
+    write.csv(r8,filename)
+    rm(r8)
+    gc()
+    endTime <- Sys.time()
+    print(paste("Standard loop time:", (endTime - startTime), sep = ""))
+  } else {
+    print("fetching more data")
+    print(paste("File output branch time:", (endTime - startTime), sep = ""))
+    print
+  }
   
-      file <- paste(clientID,j[,2], kw_no_space,startDate, endDate, ".csv", sep = "_")
-  
-      print(file)
-      
-      r2 <- r  %>% dplyr::select(2,3,4,5)
-      
-      names(r2) <- c("Key","Position", "Url", "Domain")
-      r3 <- as.data.table(inner_join(r2, ctrmod, by = "Position" ))
-      r4 <- r3[,Keyword:=lapply(Key, function(x) x[2])]
-      r5 <- r4[,Year:=lapply(Key, function(x) x[3])]
-      r6 <- r5[,Month:=lapply(Key, function(x) x[4])]
-      r7 <- r6[,Day:=lapply(Key, function(x) x[5])]
-      r8 <- r7[,Country:=lapply(Key, function(x) x[1])]
-      r8$Date <- as.Date(paste(r8$Year, r8$Month, r8$Day, sep = "-"), format = "%Y-%m-%d")
-      r8$Key  <- NULL
-      r8$Year <- NULL
-      r8$Month <- NULL
-      r8$Day <- NULL
-      
-      write.csv(r8,file)
-      endtime <- Sys.time()
-      print(starttime - endtime)
-      } 
 }
 
-    
+assign(paste("orca",i,sep=""), list_name[[i]])
+
+
+
 
 
 
@@ -203,8 +207,7 @@ foreach(i = 1:lenDF-1) %do% {
 
 
 close(pb)
-#stopCluster(cl)
-
+stopCluster(cl)
 
 
 
