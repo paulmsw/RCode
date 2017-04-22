@@ -29,7 +29,7 @@ endDate <- now - 1
 lag <- 90
 startDate <- endDate - lag
 limit <- "99999999"
-clientID <- 1
+clientID <- 63
 
 # Define DB Connection
 library(RMySQL)
@@ -93,16 +93,16 @@ queryRankings <- function(country, keyword , startDate, endDate, limit) {
 lenDF <- nrow(keywords)
 
 
-
+ 
 
 pb <- txtProgressBar(min = 1, max = lenDF, style = 3)
 
 
 
-library(doSNOW)
-NumberOfCluster <- 30
-cl <- makeCluster(NumberOfCluster, outfile = "")
-registerDoParallel(cl)
+#library(doSNOW)
+#NumberOfCluster <- 30
+#cl <- makeCluster(NumberOfCluster, outfile = "")
+#registerDoSNOW(cores = NumberOfCluster)
 
 #library(doMPI)
 #cl <- startMPIcluster( maxcores=30 )
@@ -134,25 +134,24 @@ if (!dir.exists(dirname)) {
 setwd(newpath)
 print(paste("switched to:", newpath, sep = " " ))
 
-i = 10
+i = 11
 
-foreach(i = 1:(lenDF-1), .packages = "tidyr") %dopar% {
+foreach(i = 1:lenDF, .packages = "tidyr") %do% {
   startTime <- Sys.time() 
   a <- i / 100 ; b <- (i-1) / 100;  c <- floor(b) ; d <- floor(a)
   trigger <- d - c #1 or 0 
   print(i)
-  
   j <- keywords[i,]
   print(colnames(j))
   print(lenDF - i)
   setTxtProgressBar(pb, i) 
   r <- rbind(queryRankings(j[,2], j[,4] , startDate, endDate, limit))
   
-  if(trigger == 1) {
+  if((trigger == 1) | (i == lenDF)) {
   
     # Make Filename Usable
     kw_no_space <-str_replace_all(j[,4],"[^a-zA-Z0-9]", "_") 
-    filename <- paste(clientID, kw_no_space,startDate, ".csv", sep = "_")
+    filename <- paste("out", kw_no_space,startDate, ".csv", sep = "_")
    
     
     r2 <- r  %>% dplyr::select(2,3,4,5)
@@ -167,7 +166,7 @@ foreach(i = 1:(lenDF-1), .packages = "tidyr") %dopar% {
     r8 <- r7[,Country:=lapply(Key, function(x) x[1])]
     
     
-    r8$Date <- as.Date(paste(r8$Year, r8$Month, r8$Day, sep = "-"), format = "%Y-%m-%d")
+    r8$Date <- as.Date(paste(r8$Day,  r8$Month, r8$Year, sep = "-"), format = "%Y-%m-%d")
     r8$Key  <- NULL
     r8$Year <- NULL
     r8$Month <- NULL
@@ -179,41 +178,26 @@ foreach(i = 1:(lenDF-1), .packages = "tidyr") %dopar% {
     
     print(paste("writing file:", filename, sep = "")) 
     write.csv(r8,filename)
+    x <- r8  
+
+    endTime <- Sys.time()
+  
+    assign("x", filename, pos = parent.frame())
+    print(paste("File output branch time:", (endTime - startTime), sep = ""))
     rm(r8)
     gc()
-    endTime <- Sys.time()
-    print(paste("Standard loop time:", (endTime - startTime), sep = ""))
+
   } else {
     print("fetching more data")
-    print(paste("File output branch time:", (endTime - startTime), sep = ""))
-    print
+    
+    print(paste("Standard loop time:", (startTime), sep = ""))
   }
   
 }
-
-assign(paste("orca",i,sep=""), list_name[[i]])
-
-
-
-
-
-
-# column_names <- data.frame(id = "rows.id", key = "key", 
-#                           position = "position",
-#                           url = "url",
-#                           domain = "domain",
-#                           kw = "kw")
-
-
 
 close(pb)
 stopCluster(cl)
 
 
 
-
-
-
-
-setwd("~/Data/RandD/RCode")
 
