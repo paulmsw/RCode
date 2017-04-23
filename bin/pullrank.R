@@ -15,7 +15,7 @@ option_list = list(
 opt_parser = OptionParser(option_list=option_list);
 opt = parse_args(opt_parser);
 
-# # # 
+# #
 # opt <- NULL
 #  opt$start <- 1
 #  opt$cores <- 20
@@ -175,7 +175,13 @@ foreach(i = opt$start:lenDF, .packages = c("tidyr", "data.table", "stringr")) %d
   
   r2 <- queryRankings(j[,2], as.character(j[,4]) , startDate, endDate, limit)
 
+  category <- as.character(j[,5])
   
+  
+
+  cat <- c(category);
+  r2 <- cbind(data.frame(date = r2), Category = cat);
+
   r <- rbindlist(list(r, r2))
   
   a <- i / 100 ; b <- (i-1) / 100;  c <- floor(b) ; d <- floor(a)
