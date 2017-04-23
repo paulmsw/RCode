@@ -15,12 +15,12 @@ option_list = list(
 opt_parser = OptionParser(option_list=option_list);
 opt = parse_args(opt_parser);
 
-# # # 
-# opt <- NULL
-#  opt$start <- 1
-#  opt$cores <- 20
-#  opt$id <- 63
-#  opt$days <- 90
+
+opt <- NULL
+opt$start <- 1
+opt$cores <- 20
+opt$id <- 63
+opt$days <- 90
 
 library(httr)
 library(jsonlite)
@@ -136,7 +136,7 @@ setwd(root)
 # File system shinannigans 
 dirname <- paste(now, clientID, sep = "-")
 newpath <- paste(root, dirname, sep = "" )
-newpath
+
 #Check for today's client folder and if it's not there, put it there.
 if (!dir.exists(dirname)) {
   dir.create(newpath, showWarnings = TRUE, recursive = FALSE, mode = "0777")
@@ -156,44 +156,41 @@ if (!dir.exists(paste(dirname,"logs", sep="/"))) {
 
 #create the log.txt
 writeLines(c(""), "logs/log.txt")
-
 #redirect output to logs
-sink("logs/log.txt", append = TRUE)
+#sink("logs/log.txt", append = TRUE)
 
-#loopstart ###################################################################################
+
 totalstartTime <-  Sys.time()
-foreach(i = opt$start:lenDF, .packages = c("tidyr", "data.table", "stringr")) %do% {
+foreach(i = 95:lenDF, .packages = "tidyr") %do% {
 
   loopstartTime <- Sys.time() 
+  a <- i / 100 ; b <- (i-1) / 100;  c <- floor(b) ; d <- floor(a)
+  trigger <- d - c #1 or 0 
 
+  
+  print(trigger)
+ print(i)
  
    j <- keywords[i,]
    print(j)
   print(as.character(j[,4]))
+  kwstring <- as.character(j[,4])
   print(lenDF - i)
   setTxtProgressBar(pb, i) 
   
   r2 <- queryRankings(j[,2], as.character(j[,4]) , startDate, endDate, limit)
-
+  print("main loop top")
+  Sys.time()
   
   r <- rbindlist(list(r, r2))
   
-  a <- i / 100 ; b <- (i-1) / 100;  c <- floor(b) ; d <- floor(a)
-  trigger <- d - c #1 or 0
- trigger 
- ################################## 
+  
+  
   if((trigger == 1) | (i == lenDF)) {
   
-    
-    print("triggered here ################################## ")
-    print(i)
-    
-
-    
     # Make Filename Usable
     kw_no_space <-str_replace_all(as.character(j[,4]),"[^a-zA-Z0-9]", "_") 
-    filename <- paste("out", kw_no_space,now , ".RDS", sep = "_")
-    fullpath  <- paste(newpath,filename, sep = "/")
+    filename <- paste("out", kw_no_space,now , ".csv", sep = "_")
    
     r1 <- r  %>% dplyr::select(2,3,4,5)
     names(r1) <- c("Key","Position", "Url", "Domain")
@@ -205,7 +202,7 @@ foreach(i = opt$start:lenDF, .packages = c("tidyr", "data.table", "stringr")) %d
     r1 <- r1[,Day:=lapply(Key, function(x) x[5])]
     r1 <- r1[,Country:=lapply(Key, function(x) x[1])]
     
-    r1$Date <- as.Date(paste(r1$Day, r1$Month, r1$Year, sep = "-"), format = "%d-%m-%Y")
+    r1$Date <- as.Date(paste(r1$Day,  r1$Month, r1$Year, sep = "-"), format = "%Y-%m-%d")
     r1$Key  <- NULL
     r1$Year <- NULL
     r1$Month <- NULL
@@ -213,28 +210,20 @@ foreach(i = opt$start:lenDF, .packages = c("tidyr", "data.table", "stringr")) %d
     
     r1$Keyword<- as.factor(unlist(r1$Keyword))
     r1$Country<- as.factor(unlist(r1$Country))
-    r1$Domain<- as.factor(r1$Country)
 
     
     print(paste("writing file: ", filename, sep = "")) 
-    
-    
-
-    rupper <<- r1
-    
-    saveRDS(rupper,fullpath)
-    
+    write.csv(r1,filename)
 
     
     #Remove old object and collect garbage 
-    rm(r1); gc()
-    r <- NULL
+    rm(r1, r); gc()
     loopendTime <- Sys.time()
     loopDuration <- (loopendTime - loopstartTime)
     print(paste("File output branch time:", loopDuration , sep = ""))
    
     loopDuration <<- loopDuration 
- #############################################################   
+    
   } else {
     print("fetching more data")
     loopendTime <- Sys.time()
@@ -243,20 +232,22 @@ foreach(i = opt$start:lenDF, .packages = c("tidyr", "data.table", "stringr")) %d
     print(paste("main loop bottom time:", loopDuration, sep = ""))
   }
   
-  #######################################################################
   
 }
 
 
 
+
+
+sink()
 totalendTime <-  Sys.time()
 totalDuration <- totalendTime - totalstartTime
 print(paste("Total processing time:", totalDuration, sep = ""))
 
 close(pb)
-#stopCluster(cl)
+stopCluster(cl)
 
-sink()
+
 
 library(sendmailR)
 
@@ -281,7 +272,3 @@ sendmail(from=from,to=to,subject=subject,msg=body,control=mailControl)
 
 ## printf '\033[2J'  <- clears terminal
 
-# 
-# 
-
-# 
