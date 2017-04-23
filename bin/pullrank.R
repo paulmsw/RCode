@@ -16,7 +16,6 @@ opt = parse_args(opt_parser);
 
 
 
-
 library(httr)
 library(jsonlite)
 library(dplyr)
@@ -230,4 +229,26 @@ stopCluster(cl)
 
 
 
+library(sendmailR)
+
+
+# sent to the cunt who's staying in the office till 7am playing slots and getting loaded
+
+from <- "ranking_logs@localhost"
+to <- "rightlaugh@gmail.com"
+subject <- paste("logs processing for client:", opt$id, "at:", totalendTime, sep = " " )
+
+l1 <- sprintf("Processing started at: %s and finished at: %s", totalstartTime, totalendTime)
+l2 <- sprintf("Completed in: %s minutes, across %s cores", totalDuration, opt$cores)
+l3 <- sprintf("Time frame extracted: %s days from %s to %s", opt$days, startDate, endDate)
+l4 <- sprintf("CSV output at: %s", newpath)
+l5 <- sprintf("Log files at: %s/logs/log.txt", newpath)
+body <-  paste(l1, l2, l3, l4, l5, sep = "\n\n")
+
+
+mailControl=list(smtpServer="127.0.0.1")
+
+sendmail(from=from,to=to,subject=subject,msg=body,control=mailControl)
+
+## printf '\033[2J'  <- clears terminal
 

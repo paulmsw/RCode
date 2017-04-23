@@ -1,0 +1,7 @@
+#!/bin/bash
+# Add client IDs using -i switch
+# Set timeframe in days using -d switch 
+
+Rscript pullrank.R -i 63 -d 90
+Rscript pullrank.R -i 1 -d 90
+
