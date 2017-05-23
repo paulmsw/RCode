@@ -3,14 +3,16 @@ library("optparse")
 
 
 option_list = list(
- # make_option(c("-c", "--cores"), type="numeric", default=30,
-#              help="set number of cores for parallelism", metavar="numeric"),
+  # make_option(c("-c", "--cores"), type="numeric", default=30,
+  #              help="set number of cores for parallelism", metavar="numeric"),
   make_option(c("-i", "--id"), type="numeric", default=NULL,
               help="set the client ID eg: -i 63,  (will return results for MoneyGuru)", metavar="numeric"),
   make_option(c("-d", "--days"), type="numeric", default=90,
               help="set number of days to be processed [default= %default]", metavar="numeric"),
   make_option(c("-s", "--start"), type="numeric", default=1,
-	                   help="set increment start value [default= %default]", metavar="numeric")
+              help="set increment start value [default= %default]", metavar="numeric"),
+  make_option(c("-o", "--ofs"), type="numeric", default=0,
+              help="set lag in days[default= %default]", metavar="numeric")
 );
 
 opt_parser = OptionParser(option_list=option_list);
@@ -21,12 +23,14 @@ if (is.null(opt$id)){
   stop("At least one argument must be supplied: clientID, using ut -i switch \n\nExample: pullrank.R -i 63 -d 90 (to pull MoneyGuru.com's data for the past 90 days)\n\n\n", call.=FALSE)
 }
 
-# #
-# opt <- NULL
-#  opt$start <- 1
-#  opt$cores <- 20
-#  opt$id <- 63
-#  opt$days <- 90
+
+
+   #  opt <- NULL
+   # opt$start <- 1
+   #   opt$cores <- 20
+   #  opt$id <- 54
+   # opt$days <- 90
+   #  opt$ofs <- 0
 
 library(httr)
 library(jsonlite)
@@ -52,11 +56,17 @@ setwd("~/Data/RandD/RCode")
 
 # Set Variables
 now <- as.Date(Sys.Date())
-endDate <- now - 1
+endDate <- now - opt$ofs
 lag <- opt$days
 startDate <- endDate - lag
 limit <- "99999999"
 clientID <- opt$id
+
+print("startDate:")
+print(as.character(startDate))
+
+print("endDate:")
+print(as.character(endDate))
 
 # Define DB Connection
 library(RMySQL)
@@ -75,6 +85,7 @@ loadKeywords <- function() {
                   password = options()$mysql$password)
   #Contruct Query ========
   query <- sprintf("SELECT * FROM \`keywords\` WHERE \`client\` = \'%s\'", clientID)
+  
   # Submit the fetch query and disconnect
   data <- dbGetQuery(db, query)
   dbDisconnect(db)
@@ -92,19 +103,19 @@ queryRankings <- function(country, keyword , startDate, endDate, limit) {
   ca_user <- "mediaskunkworks"
   ca_pass <- "PSpakr4GSYfQ"
   library(httr)
-
+  
   #DeConstruct Query
   library(lubridate)
   library(data.table)
   startYear <- year(startDate)
   startMonth <- month(startDate)
   startDay <- day(startDate)
-
+  
   endYear <- year(endDate)
   endMonth <- month(endDate)
   endDay <- day(endDate)
-
-
+  
+  
   #Construct Query
   query <-  sprintf("https://mediaskunkworks.cloudant.com/google/_design/rankings/_view/positions?start_key=[\"%s\", \"%s\", %s, %s, %s, \"a\"]&end_key=[\"%s\", \"%s\", %s, %s, %s, \"zzzzzzzzzzzzzzzzzzzzzzz\"]&limit=%s&reduce=false",
                     country, keyword, startYear, startMonth, startDay, country, keyword, endYear, endMonth, endDay, limit)
@@ -112,7 +123,7 @@ queryRankings <- function(country, keyword , startDate, endDate, limit) {
   response <- GET(encQuery, authenticate(ca_user, ca_pass))
   api_r <- content(response, as="text")
   api_r <- jsonlite::fromJSON(api_r,simplifyVector = TRUE, flatten=TRUE)
-
+  
   return(as.data.table(api_r[3]))
 }
 
@@ -140,7 +151,7 @@ setwd(root)
 
 
 # File system shinannigans
-dirname <- paste(now, clientID, sep = "-")
+dirname <- paste(endDate, clientID, sep = "-")
 newpath <- paste(root, dirname, sep = "" )
 newpath
 #Check for today's client folder and if it's not there, put it there.
@@ -169,45 +180,42 @@ sink("logs/log.txt", append = TRUE)
 #loopstart ###################################################################################
 totalstartTime <-  Sys.time()
 foreach(i = opt$start:lenDF, .packages = c("tidyr", "data.table", "stringr")) %do% {
-
+  
   loopstartTime <- Sys.time()
-
-
-   j <- keywords[i,]
-   print(j)
+  
+  
+  j <- keywords[i,]
+  print(j)
   print(as.character(j[,4]))
   print(lenDF - i)
   setTxtProgressBar(pb, i)
-
+  
   r2 <- queryRankings(j[,2], as.character(j[,4]) , startDate, endDate, limit)
-
+  
   category <- as.character(j[,5])
-
-
-
+  
+  
+  
   cat <- c(category);
   r2 <- cbind(data.frame(date = r2), Category = cat);
-
+  
   r <- rbindlist(list(r, r2))
-
-
-  a <- i / 100 ; b <- (i-1) / 100;  c <- floor(b) ; d <- floor(a)
+  
+  
+  a <- i / 10 ; b <- (i-1) / 10;  c <- floor(b) ; d <- floor(a)
   trigger <- d - c #1 or 0
-
- ##################################
+  
+  ##################################
   if((trigger == 1) | (i == lenDF)) {
-
-
+    
     print("triggered here ################################## ")
     print(i)
-
-
-
+    
     # Make Filename Usable
     kw_no_space <-str_replace_all(as.character(j[,4]),"[^a-zA-Z0-9]", "_")
     filename <- paste("out", kw_no_space,now , ".RDS", sep = "_")
     fullpath  <- paste(newpath,filename, sep = "/")
-
+    
     r1 <- r  %>% dplyr::select( 2,3,4,5, 6)
     names(r1) <- c("Key","Position", "Url", "Domain", "Category")
     r1 <- as.data.table(inner_join(r1, ctrmod, by = "Position" ))
@@ -216,48 +224,49 @@ foreach(i = opt$start:lenDF, .packages = c("tidyr", "data.table", "stringr")) %d
     r1 <- r1[,Month:=lapply(Key, function(x) x[4])]
     r1 <- r1[,Day:=lapply(Key, function(x) x[5])]
     r1 <- r1[,Country:=lapply(Key, function(x) x[1])]
-
+    
     r1$Date <- as.Date(paste(r1$Day, r1$Month, r1$Year, sep = "-"), format = "%d-%m-%Y")
     r1$Key  <- NULL
     r1$Year <- NULL
     r1$Month <- NULL
     r1$Day <- NULL
-
+    
     r1$Keyword<- as.factor(unlist(r1$Keyword))
     r1$Country<- as.factor(unlist(r1$Country))
     r1$Domain<- as.factor(r1$Domain)
     r1$Category<- as.factor(r1$Category)
-
-
+    
+    
     print(paste("writing file: ", filename, sep = ""))
-
-
-
+    
+    
+    
     rupper <<- r1
-
+    
     saveRDS(rupper,fullpath)
-
-
-
+    
+    
+    
     #Remove old object and collect garbage
-    rm(r1); gc()
+    rm(r1)
+    gc()
     r <- NULL
     loopendTime <- Sys.time()
     loopDuration <- (loopendTime - loopstartTime)
     print(paste("File output branch time:", loopDuration , sep = ""))
-
+    
     loopDuration <<- loopDuration
- #############################################################
+    #############################################################
   } else {
     print("fetching more data")
     loopendTime <- Sys.time()
     loopDuration <- (loopendTime - loopstartTime)
-
+    
     print(paste("main loop bottom time:", loopDuration, sep = ""))
   }
-
+  
   #######################################################################
-
+  
 }
 
 

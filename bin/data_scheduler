@@ -3,5 +3,10 @@
 # Set timeframe in days using -d switch 
 
 Rscript pullrank.R -i 63 -d 90
+ echo 'pullrank.R -i 63 -d 90  - completed...'
+Rscript summarypipe.R -i 63
+echo 'summarypipe.R -i 63 - completed...'
 Rscript pullrank.R -i 1 -d 90
-
+ echo 'pullrank.R -i 1 -d 90 - completed...'
+Rscript summarypipe.R -i 1
+ echo 'summarypipe.R -i 1 - completed...'
