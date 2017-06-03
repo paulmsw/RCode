@@ -68,9 +68,6 @@ hc_loans_jw <- hclust(as.dist(loans_dist_jw))
 hc_creditcards_jw <- hclust(as.dist(creditcards_dist_jw))
 #
 
-
-
-
 colorsl = brewer.pal(k1,"Dark2")
 colorsc = brewer.pal(k2,"Dark2")
 clusloans = cutree(hc_creditcards_jw, k = k1)
@@ -79,7 +76,6 @@ cluscards =   cutree(hc_loans_jw, k = k2)
   #    label.offset = 0, cex = 0.6)
 #plot(as.phylo(hc_loans_jw),   main = "Loans, String Similarity: Jaro-Winkler", sub = "Jaro-Winkler Algorithm",  tip.color = colorsc[cluscards],
   #   label.offset = 0, cex = 0.6)
-
 
 ColAttr <- function(x, attrC, ifIsNull) {
   # Returns column attribute named in attrC, if present, else isNullC.

@@ -1,5 +1,5 @@
 #!/usr/bin/env Rscript
-library("optparse")
+library(optparse)
 library(data.table)
 library(dplyr)
 
@@ -10,30 +10,33 @@ option_list = list(
               help="set the client ID eg: -i 63,  (will return results for MoneyGuru)", metavar="numeric"),
   make_option(c("-o", "--out"), type="numeric", default=54,
               help="set log output eg: -o 0, (will turn off logging) \n  [default= %default / ie On]", metavar="numeric"),
-  make_option(c("-l", "--lag"), type="numeric", default=0,
+  make_option(c("-l", "--lag"), type="numeric", default=4,
               help="set lag in days - [default= %default, ie today]", metavar="numeric")
 );
 
 opt_parser = OptionParser(option_list=option_list);
 opt = parse_args(opt_parser);
 
+
+
 if (is.null(opt$id)){
   print_help(opt_parser)
   stop("At least one argument must be supplied: clientID, using the -i switch \n\nExample: summarypipe -i 63 -o 0 (to process MoneyGuru.com's data for the past 90 days)\n\n\n", call.=FALSE)
 }
 # 
-# #http://10.0.101.8:8787/
-  opt <- NULL
-   opt$start <- 1
-   opt$cores <- 20
-  opt$id <- 1
-   opt$lag <- 0
-    opt$out <- 1
-   opt$days <- 90
+# # #http://10.0.101.8:8787/
+# 
+#      opt <- NULL
+#      opt$start <- 1
+#       opt$cores <- 20
+#      opt$id <- 1
+#      opt$lag <- 4
+#        opt$out <- 1
+#       opt$days <- 90
 
 
 clientID <- opt$id
-
+print("latest version")
 
 library(dplyr)
 library(RcppRoll)
@@ -66,6 +69,11 @@ print(clientID)
 print(filepath)
 
 
+
+
+
+
+
 #Check for todays's client folder and if it's not there, put it there.
 if (!dir.exists(fullpath)) {
   dir.create(fullpath, showWarnings = TRUE, recursive = FALSE, mode = "0777")
@@ -91,17 +99,19 @@ if (dir.exists(fullpath)) {
 
 
 kwp <- readRDS(paste(cwd, "kwpdata/", clientID, "_kwp.RDS", sep = ""))
+kwp$Keyword <- as.factor(tolower(str_replace_all(kwp$Keyword, "[[:punct:]]", "")))
+kwp$Bid[is.na(kwp$Bid)] <- 0
+kwp$Competition[is.na(kwp$Competition)] <- 0
+
 
 
 #####################################
 
-require(stringr)
+
 
 # #Go to client directory
 setwd(fullpath)
  print(paste("switched to:", fullpath, sep = " " ))
-
-
 
  
  #Check for logs dir...  and if it's not there, put it there.
@@ -120,13 +130,29 @@ setwd(fullpath)
    #redirect output to summarylog.txt
  #  sink(paste(fullpath,"logs/summarylog.txt", sep = ""), append = TRUE)
  }
-
  
 
+
+ 
+ HCL2 <- read.csv("~/Data/RandD/UK/HCL2.csv",stringsAsFactors = TRUE)
+ HCL2$Keyword <- as.factor(tolower(str_replace_all(HCL2$Keyword, "[[:punct:]]", "")))
+ HCL2 <- unique(HCL2) 
+ HCL2[is.na(HCL2)] <- 0
+ 
+ 
+ 
 foreach(i = 1:numfiles, .packages = c("dplyr", "RollingWindow")) %do% {
-  file_i <- readRDS(paste(fullpath, filelist[i], sep = "/"))
-  dfm <- inner_join(file_i, kwp, by = "Keyword" )
-  dfm$Keyword <- as.factor(dfm$Keyword)
+
+  
+    file_i <- readRDS(paste(fullpath, filelist[i], sep = "/"))
+    
+    f_i <- unique(file_i %>% dplyr::select(-Category))
+    
+    
+
+    
+    dfm <- inner_join(f_i, kwp, by = "Keyword" )
+    dfm$Keyword <- as.factor(dfm$Keyword)
 
 
 
@@ -137,7 +163,7 @@ foreach(i = 1:numfiles, .packages = c("dplyr", "RollingWindow")) %do% {
 
   dataPeriod <- maxDate - minDate
 
-  dfm$DayCount <- as.integer(dfm$Date - minDate) + 1
+  dfm[is.na(dfm)] <- 0
   dfm$Month <- as.numeric(format(dfm$Date, "%m"))
   dfm$Year <- as.numeric(format(dfm$Date, "%Y"))
 
@@ -153,13 +179,27 @@ foreach(i = 1:numfiles, .packages = c("dplyr", "RollingWindow")) %do% {
   second30end = min(file_i$Date) + 60
   endDate = max(file_i$Date) 
   startDate = min(file_i$Date) 
-  
- 
   dfm$DayCount <- as.integer(dfm$Date - startDate) + 1
   
+  GamingTypes <- read.csv("~/Data/RandD/UK/GamingTypes.csv", stringsAsFactors = TRUE)
+  gt <- GamingTypes[,c(1,2)]
+  rm(GamingTypes)
   
+  dfm$Keyword <- as.factor(str_replace_all(dfm$Keyword, "[[:punct:]]", ""))
+
+  
+  
+  dt <- dplyr::inner_join(dfm, HCL2, by = "Keyword")
+  dt$Keyword <- as.factor(dt$Keyword)
+
+  dt  <- unique(dt)
+  
+  
+  dfm <- dt
+  
+
   # Sort Aggregations
-  DF_Group <- dfm %>% dplyr::group_by(DayCount, Category, Country, Date, Domain, Keyword, Url, Month, Year) %>%
+  DF_Group <- dfm %>% dplyr::group_by(DayCount, Product, Country, Date, Domain, Keyword, Url, Month, Year) %>%
     dplyr::arrange(DayCount) %>%
     summarise(pmean = mean(Position),
               rmean = mean(Revenue),
@@ -172,15 +212,12 @@ foreach(i = 1:numfiles, .packages = c("dplyr", "RollingWindow")) %do% {
 
   #30 day rolling mean
 
-  ma_7 <- 7
-  ma_30 <- 30
-  library(RcppRoll)
+  
 
-
-  DF <- ungroup(DF_Group)
+  DF <- unique(ungroup(DF_Group))
 
   # Compute Moving Averages all wrong to date
-  by_site <- dplyr::group_by(DF, Keyword, Domain, Url, Month, Category)
+  by_site <- dplyr::group_by(DF, Keyword, Domain, Url, Month, Product)
   arrdf <- dplyr::arrange(by_site, DayCount)
   
 
@@ -203,14 +240,14 @@ foreach(i = 1:numfiles, .packages = c("dplyr", "RollingWindow")) %do% {
 
   
   dtroll2$monSlice <- NULL
-  
+
 
   dtroll2[dtroll2$Date >= startDate & dtroll2$Date < first30end, "monSlice"] <- 1
   dtroll2[dtroll2$Date >= first30end & dtroll2$Date < second30end, "monSlice"] <- 2
-  dtroll2[dtroll2$Date >= second30end & dtroll2$Date < endDate, "monSlice"] <- 3
+  dtroll2[dtroll2$Date >= second30end & dtroll2$Date <= endDate, "monSlice"] <- 3
+  
   dtroll2$monSlice <- as.factor(dtroll2$monSlice)
 
-  
   dtroll2$last7 <- NULL
   dtroll2[dtroll2$Date >= last7start & dtroll2$Date < endDate, "last7"] <- 1
   dtroll2[!(dtroll2$Date >= last7start & dtroll2$Date < endDate), "last7"] <- 0
@@ -225,7 +262,10 @@ foreach(i = 1:numfiles, .packages = c("dplyr", "RollingWindow")) %do% {
     
   dtroll2 <-  ungroup(dtroll2)
   #############################
-  smon <- dtroll2 %>% dplyr::group_by(Month, Domain, Category ) %>% dplyr::arrange(Month, Keyword) %>%
+
+  
+  
+    smon <- dtroll2 %>% dplyr::group_by(Month, Domain, Product ) %>% dplyr::arrange(Month, Keyword) %>%
     summarise(rsum = sum(rmeanSubbed),
               pmean = mean(pmeanSubbed),
               csum = sum(cmeanSubbed),
@@ -248,6 +288,7 @@ foreach(i = 1:numfiles, .packages = c("dplyr", "RollingWindow")) %do% {
   manyhosts <- c(urllist)
   newurls <- tldextract(urllist, tldnames=tld)
   smon$SLD <- as.factor(newurls$domain)
+  smon$Host<- smon$Domain
   smon$Domain <- as.factor(paste(newurls$domain, newurls$tld, sep="."))
 
 
@@ -262,7 +303,7 @@ foreach(i = 1:numfiles, .packages = c("dplyr", "RollingWindow")) %do% {
 
   
   #############################
-  smonk <- dtroll2 %>% dplyr::group_by(monSlice,Keyword, Domain, Category ) %>% dplyr::arrange(monSlice, Keyword) %>%
+  smonk <- dtroll2 %>% dplyr::group_by(monSlice,Keyword, Domain, Product ) %>% dplyr::arrange(monSlice, Keyword) %>%
     summarise(rsum = sum(rmeanSubbed),
               pmean = mean(pmeanSubbed),
               csum = sum(cmeanSubbed),
@@ -284,6 +325,7 @@ foreach(i = 1:numfiles, .packages = c("dplyr", "RollingWindow")) %do% {
   tld <- getTLD() # optionally pass in a different URL than the default
   manyhosts <- c(urllist)
   newurls <- tldextract(urllist, tldnames=tld)
+  smonk$Host<- smonk$Domain
   smonk$SLD <- as.factor(newurls$domain)
   smonk$Domain <- as.factor(paste(newurls$domain, newurls$tld, sep="."))
   
@@ -304,7 +346,7 @@ foreach(i = 1:numfiles, .packages = c("dplyr", "RollingWindow")) %do% {
   
   #############################
   dtroll2 <-  ungroup(dtroll2)
-  sdaykw <- dtroll2 %>% dplyr::group_by(DayCount, monSlice ,Category ,Keyword, Domain ) %>%
+  sdaykw <- dtroll2 %>% dplyr::group_by(DayCount, monSlice ,Product ,Keyword, Domain ) %>%
     dplyr::arrange(DayCount, Month, Keyword) %>%
     summarise(rsum = sum(rmean),
               pmean = mean(pmean),
@@ -324,6 +366,7 @@ foreach(i = 1:numfiles, .packages = c("dplyr", "RollingWindow")) %do% {
   tld <- getTLD() # optionally pass in a different URL than the default
   manyhosts <- c(urllist)
   newurls <- tldextract(urllist, tldnames=tld)
+  sdaykw$Host<- sdaykw$Domain
   sdaykw$SLD <- as.factor(newurls$domain)
   sdaykw$Domain <- as.factor(paste(newurls$domain, newurls$tld, sep="."))
 
@@ -337,7 +380,7 @@ foreach(i = 1:numfiles, .packages = c("dplyr", "RollingWindow")) %do% {
   #############################
 
 
-  sday2dom <- dtroll2 %>% dplyr::group_by(DayCount, Month,Category ,Keyword, Domain ) %>%
+  sday2dom <- dtroll2 %>% dplyr::group_by(DayCount, Month,Product ,Keyword, Domain ) %>%
     dplyr::arrange(DayCount, Month, Keyword) %>%
     dplyr::summarise(rsum = sum(rmean),
               pmean = mean(pmean),
@@ -349,6 +392,16 @@ foreach(i = 1:numfiles, .packages = c("dplyr", "RollingWindow")) %do% {
               potmeanclicks = mean(potmeanclicksSubbed))
 
   sday2dom$Date <- as.Date(minDate + sday2dom$DayCount - 1)
+  
+  urllist <- as.character(sday2dom$Domain)
+  # get most recent TLD listings
+  tld <- getTLD() # optionally pass in a different URL than the default
+  manyhosts <- c(urllist)
+  newurls <- tldextract(urllist, tldnames=tld)
+  sday2dom$Host<- sday2dom$Domain
+  sday2dom$SLD <- as.factor(newurls$domain)
+  sday2dom$Domain <- as.factor(paste(newurls$domain, newurls$tld, sep="."))
+  
 
   sday2domfn <- as.character(paste(fullpath, "sday2dom_", kw_no_space,opt$id,".RDS", sep = ""))
   print("Saving sday2dom")
@@ -363,11 +416,14 @@ foreach(i = 1:numfiles, .packages = c("dplyr", "RollingWindow")) %do% {
   print(sday2domfn)
   
   
+
+  
+  
   dtroll2 <-  ungroup(dtroll2)
   #############################
   
   ###### Last 7 days detailed
-  sl7kw <- dtroll2 %>% dplyr::filter(last7=="1") %>% dplyr::group_by(DayCount, monSlice ,Category ,Keyword, Domain ) %>%
+  sl7kw <- dtroll2 %>% dplyr::filter(last7=="1") %>% dplyr::group_by(DayCount ,Product ,Keyword, Domain ) %>%
     dplyr::arrange(DayCount, monSlice, Keyword) %>%
     dplyr::summarise(rsum = sum(rmean),
               pmean = mean(pmean),
@@ -380,7 +436,11 @@ foreach(i = 1:numfiles, .packages = c("dplyr", "RollingWindow")) %do% {
   
   sl7kw$Date <- as.Date(minDate + sl7kw$DayCount - 1)
   
+  
+  
   sl7kwfn <- as.character(paste(fullpath, "sl7kw_", kw_no_space,opt$id,".RDS", sep = ""))
+  
+  
   print("Saving sl7kw")
   print(opt$id)
   print(sl7kwfn)
@@ -400,7 +460,7 @@ foreach(i = 1:numfiles, .packages = c("dplyr", "RollingWindow")) %do% {
   #############################
   
   ###### Last 7 days summary
-  sl7sum <- dtroll2 %>% dplyr::filter(last7=="1") %>% dplyr::group_by(monSlice, DayCount ,Category ,Keyword, Domain ) %>%
+  sl7sum <- dtroll2 %>% dplyr::filter(last7=="1") %>% dplyr::group_by(DayCount ,Product, Domain ) %>%
     dplyr::arrange(monSlice, Keyword) %>%
     dplyr::summarise(rsum = sum(rmean),
               pmean = mean(pmean),
@@ -430,7 +490,7 @@ foreach(i = 1:numfiles, .packages = c("dplyr", "RollingWindow")) %do% {
 
   
     ###### yesterday summary
-  sl1sum <- dtroll2 %>% dplyr::filter(last1=="1") %>% dplyr::group_by(monSlice, DayCount, Category ,Keyword, Domain ) %>%
+  sl1sum <- dtroll2 %>% dplyr::filter(last1=="1") %>% dplyr::group_by(DayCount, Product, Domain ) %>%
     dplyr::arrange(monSlice, Keyword) %>%
     summarise(rsum = sum(rmean),
               pmean = mean(pmean),
@@ -452,7 +512,35 @@ foreach(i = 1:numfiles, .packages = c("dplyr", "RollingWindow")) %do% {
   print("for client ID:")
   print(opt$id)
   print("in location:")
-  print(sl1sum)
+  
+  
+  dtroll2 <-  ungroup(dtroll2)
+  
+  
+  ###### yesterday summary
+  sl1kw <- dtroll2 %>% dplyr::filter(last1=="1") %>% dplyr::group_by(DayCount, Product ,Keyword, Domain ) %>%
+    dplyr::arrange(DayCount, Keyword) %>%
+    summarise(rsum = sum(rmean),
+              pmean = mean(pmean),
+              csum = sum(cmean),
+              bmean = mean(bmean),
+              NumberKeywords = n(),
+              isum = sum(imean),
+              potmean = mean(potmean),
+              potmeanclicks = mean(potmeanclicksSubbed))
+  
+  sl1kw$Date <- as.Date(minDate + sl1kw$DayCount - 1)
+  
+  sl1skwfn <- as.character(paste(fullpath, "sl1sum_", kw_no_space,opt$id,".RDS", sep = ""))
+  print("Saving sl1sum")
+  print(opt$id)
+  print(sl1sumfn)
+  saveRDS(sl1sum, sl1sumfn)
+  print("Saving sl7sum ")
+  print("for client ID:")
+  print(opt$id)
+  print("in location:")
+  
   
 }
 

@@ -1,12 +1,14 @@
 # get the Hadley Wickham's vehicles data set
-
+library(dplyr)
+library(sparklyr)
+spark_install(version = "2.0.1")
 
 library(stringdist)
 library(ggdendro)
 library(ape)
 library(ggplot2)
 library(stringdist)
-
+write.csv(kwp,"kwp_dl.csv")
 
 loankws <- unique(as.character(kd[kd$Category == "loans",3]))
 creditcardkws <- unique(as.character(kd[kd$Category == "creditcard",3]))
